@@ -7,22 +7,27 @@ from sandbox import Sandbox
 
 
 def run_solution(instance, solution, run_cnt):
-    runtime = 0
+    instr, memory = 0, 0
+    sample = {
+        'solution': solution,
+        'convert_offline': instance['convert_offline'],
+        'evaluate_offline': instance['evaluate_offline'],
+        'entry_point': instance['entry_point'],
+        'test_cases': json.loads(instance['test_cases']),
+        'timeout': 60
+    }
     for run in range(run_cnt):
-        sample = {
-            'solution': solution,
-            'convert_offline': instance['convert_offline'],
-            'evaluate_offline': instance['evaluate_offline'],
-            'entry_point': instance['entry_point'],
-            'test_cases': json.loads(instance['test_cases']),
-            'timeout': 60
-        }
         result = Sandbox.run_sample(sample)
-        if result['result'] == 'passed':
-            runtime += result['runtime']
+        if result['status'] == 'passed':
+            instr += result['instr']
+            memory += result['memory']
         else:
             return result
-    return {'result': 'passed', 'runtime': runtime / run_cnt}
+    return {
+        'status': 'passed',
+        'instr': instr / run_cnt,
+        'memory': memory / run_cnt
+    }
 
 
 def get_runtime_distributions(run_cnt):
