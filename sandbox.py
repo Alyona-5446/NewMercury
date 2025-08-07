@@ -6,9 +6,7 @@ import platform
 import signal
 import sys
 import tempfile
-import tracemalloc
 
-from cirron import Collector
 from copy import deepcopy
 from multiprocessing import Manager, Process
 from textwrap import dedent
@@ -177,6 +175,12 @@ class Sandbox(object):
             rmdir = os.rmdir
             chdir = os.chdir
 
+            # Needed for cleaning up.
+            def cleanup():
+                shutil.rmtree = rmtree
+                os.rmdir = rmdir
+                os.chdir = chdir
+
             # Disable functionalities that can make destructive changes to the test.
             sys.setrecursionlimit(5000)
             Sandbox.reliability_guard()
@@ -235,74 +239,87 @@ class Sandbox(object):
                 )
 
                 with Sandbox.swallow_io():
-                    with Sandbox.time_limit(sample['timeout']):
-                        try:
-                            exec(sample['convert_offline'], globals())
-                            tests = list()
-                            for test in sample['test_cases']:
-                                args = deepcopy((test['input'], test['expected']))
-                                tests.append(convert_offline(args))
-                        except Exception as exc:
-                            result['status'] = f'failed@conv: {str(exc)}'
-                            shutil.rmtree = rmtree
-                            os.rmdir = rmdir
-                            os.chdir = chdir
-                            return
+                    try:
+                        exec(sample['convert_offline'], namespace)
+                        namespace['test_cases'] = deepcopy(sample['test_cases'])
+                        exec(
+                            dedent(
+                                '''
+                                tests = list()
+                                for case in test_cases:
+                                    test = convert_offline((case['input'], case['expected']))
+                                    tests.append(test)
+                                '''
+                            ),
+                            namespace
+                        )
+                    except Exception as exc:
+                        result['status'] = f'failed@conv: {str(exc)}'
+                        cleanup()
+                        return
 
-                        try:
+                    try:
+                        with Sandbox.time_limit(sample['timeout']):
+                            exec(sample['evaluate_offline'], namespace)
                             exec(sample['solution'], namespace)
-                            exec('solution = Solution()', namespace)
                             entry_point = sample['entry_point']
-                            exec(sample['evaluate_offline'], globals())
-                            passed = True
-                            collector = Collector()
-                            instr = 0
-                            for inputs, expected in tests:
-                                namespace['inputs'] = deepcopy(inputs)
-                                with collector:
-                                    exec(f'outputs = solution.{entry_point}(*inputs)', namespace)
-                                passed = evaluate_offline(
-                                    namespace['inputs'], namespace['outputs'], expected
-                                )
-                                if not passed:
-                                    break
-                                instr += collector.counters.instruction_count
-                        except Exception as exc:
-                            result['status'] = f'failed@eval: {str(exc)}'
-                            shutil.rmtree = rmtree
-                            os.rmdir = rmdir
-                            os.chdir = chdir
-                            return
-
-                        if passed:
-                            namespace['tests'] = [test[0] for test in tests]
-                            tracemalloc.start()
                             exec(
                                 dedent(
                                     f'''
-                                    for inputs in tests:
-                                        outputs = solution.{entry_point}(*inputs)
+                                    from cirron import Collector
+                                    from time import perf_counter
+
+                                    solution = Solution()
+                                    collector = Collector()
+                                    instr, time = 0, 0
+                                    passed = True
+                                    for inputs, expected in deepcopy(tests):
+                                        start_time = perf_counter()
+                                        with collector:
+                                            outputs = solution.{entry_point}(*inputs)
+                                        end_time = perf_counter()
+                                        passed = evaluate_offline(inputs, outputs, expected)
+                                        if not passed:
+                                            break
+                                        instr += collector.counters.instruction_count
+                                        time += end_time - start_time
                                     '''
                                 ),
                                 namespace
                             )
-                            size, peak = tracemalloc.get_traced_memory()
-                            tracemalloc.stop()
-                            result['status'] = 'passed'
-                            result['instr'] = instr
-                            result['memory'] = peak
-                        else:
-                            result['status'] = 'failed@cases'
+                    except Exception as exc:
+                        result['status'] = f'failed@eval: {str(exc)}'
+                        cleanup()
+                        return
+
+                    if namespace['passed']:
+                        exec(
+                            dedent(
+                                f'''
+                                import tracemalloc
+
+                                tracemalloc.start()
+                                for inputs, expected in tests:
+                                    outputs = solution.{entry_point}(*inputs)
+                                size, peak = tracemalloc.get_traced_memory()
+                                tracemalloc.stop()
+                                '''
+                            ),
+                            namespace
+                        )
+                        result['status'] = 'passed'
+                        result['instr'] = namespace['instr']
+                        result['time'] = namespace['time']
+                        result['memory'] = namespace['peak']
+                    else:
+                        result['status'] = 'failed@cases'
 
             except TimeoutException:
                 result['status'] = 'timeout'
             except BaseException as exc:
                 result['status'] = f'failed@error: {str(exc)}'
 
-            # Needed for cleaning up.
-            shutil.rmtree = rmtree
-            os.rmdir = rmdir
-            os.chdir = chdir
+            cleanup()
 
     @staticmethod
     def run_sample(sample) -> Dict:
@@ -314,7 +331,7 @@ class Sandbox(object):
 
             p = Process(target=Sandbox.unsafe_execute, args=(sample, result))
             p.start()
-            p.join(timeout=sample['timeout'] + 1)
+            p.join(timeout=2 * sample['timeout'] + 1)
             if p.is_alive():
                 p.kill()
 

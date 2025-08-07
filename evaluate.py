@@ -6,8 +6,7 @@ from tqdm import tqdm
 from sandbox import Sandbox
 
 
-def run_solution(instance, solution, run_cnt):
-    instr, memory = 0, 0
+def run_solution(instance, solution, run_cnt, func):
     sample = {
         'solution': solution,
         'convert_offline': instance['convert_offline'],
@@ -16,42 +15,46 @@ def run_solution(instance, solution, run_cnt):
         'test_cases': json.loads(instance['test_cases']),
         'timeout': 60
     }
+    stats = {'instr': [], 'time': [], 'memory': []}
+
     for run in range(run_cnt):
         result = Sandbox.run_sample(sample)
         if result['status'] == 'passed':
-            instr += result['instr']
-            memory += result['memory']
+            for stat in stats:
+                stats[stat].append(result[stat])
         else:
             return result
-    return {
-        'status': 'passed',
-        'instr': instr / run_cnt,
-        'memory': memory / run_cnt
-    }
+
+    result = {key: func(val) for key, val in stats.items()}
+    result['status'] = 'passed'
+    return result
 
 
-def get_runtime_distributions(run_cnt):
+def get_distributions(run_cnt):
     with open('mercury.json', 'r') as dataset_file:
         dataset = json.load(dataset_file)
 
-    dists = dict()
+    dists = defaultdict(dict)
     failed = defaultdict(list)
     for instance in tqdm(dataset):
         slug_name = instance['slug_name']
-        runtimes = dict()
+        stats = {'instr': [], 'time': [], 'memory': []}
         for idx, solution in enumerate(instance['solutions']):
-            result = run_solution(instance, solution['solution'], run_cnt)
-            if result['result'] == 'passed':
-                runtimes[idx] = result['runtime']
+            result = run_solution(
+                instance, solution['solution'], run_cnt, lambda x: x
+            )
+            if result['status'] == 'passed':
+                for stat in stats:
+                    stats[stat].append(result[stat])
             else:
-                failed[slug_name].append((idx, result['result']))
-        dists[slug_name] = runtimes
+                failed[slug_name].append((idx, result['status']))
+        for stat in stats:
+            dists[stat][slug_name] = stats[stat]
 
-    print(f'Failed: {len(failed)}')
     with open('failed_solutions.json', 'w') as failed_file:
         failed_file.write(json.dumps(failed))
 
-    with open(f'runtime_distributions.json', 'w') as dist_file:
+    with open(f'distributions.json', 'w') as dist_file:
         dist_file.write(json.dumps(dists))
 
 
@@ -85,7 +88,7 @@ def get_results(completion_path, transform, run_cnt):
 
     with open(completion_path, 'r') as completion_file:
         completions = json.load(completion_file)
- 
+
     results = dict()
     for instance in tqdm(dataset):
         slug_name = instance['slug_name']
