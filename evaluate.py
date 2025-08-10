@@ -99,13 +99,14 @@ def get_results(completion_path, transform, run_cnt):
         metrics['pass@1'][name] = calc_pass_at_1(subset)
         for stat in stats:
             beyond = calc_beyond(subset, dists, stat)
-            dps, dps_norm = calc_dps(subset, dists, stat)
-            dps_filt, dps_norm_filt = calc_dps(subset, dists, stat, filters)
+            dps, dps_norm, _ = calc_dps(subset, dists, stat)
+            dps_filt, dps_norm_filt, num_dps_tasks = calc_dps(subset, dists, stat, filters)
             metrics[f'beyond_{stat}'][name] = beyond
             metrics[f'dps_{stat}'][name] = dps
             metrics[f'dps_norm_{stat}'][name] = dps_norm
             metrics[f'dps_filt_{stat}'][name] = dps_filt
             metrics[f'dps_norm_filt_{stat}'][name] = dps_norm_filt
+            metrics[f'dps_filt_num_tasks_{stat}'][name] = num_dps_tasks
 
     with open('results.json', 'w') as result_file:
         result_file.write(json.dumps(results))
