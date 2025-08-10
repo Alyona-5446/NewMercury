@@ -73,14 +73,14 @@ def calc_dps(
     dists: Distributions,
     metric_name: str = 'runtime',
     filters: list[DistributionFilter] | None = None,
-) -> tuple[float, float]:
+) -> tuple[float, float, int]:
     if filters is not None:
         for filter in filters:
             dists = filter(dists)
 
     num_tasks = len(dists)
     if not num_tasks:
-        raise ValueError('DPS evaluation failed: no valid distributions')
+        return 0, 0, 0
 
     dps, dps_norm = 0, 0
     for slug_name, solutions in dists.items():
@@ -107,4 +107,4 @@ def calc_dps(
             dps += 1
             dps_norm += 1
 
-    return dps / num_tasks, dps_norm / num_tasks
+    return dps / num_tasks, dps_norm / num_tasks, num_tasks
