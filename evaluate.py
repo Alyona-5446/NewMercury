@@ -93,14 +93,42 @@ def get_results(completion_path, transform, run_cnt):
         'Hard': hard,
         'Total': results
     }
+
     filters = [filter_by_compute_cost, filter_by_cv, filter_by_clusters]
+    dps_kwargs = {
+        'time': {
+            'min_metric_value': 0.001,  # 1ms
+            'cv_percentile': 99,
+            'max_cv': 0.05,
+            'min_clusters': 3,
+            'cluster_ratio_bias': 0.2,
+            'cluster_ratio_weight': 0.001,
+        },
+        'instr': {
+            'min_metric_value': 100_000,
+            'cv_percentile': 99,
+            'max_cv': 0.05,
+            'min_clusters': 3,
+            'cluster_ratio_bias': 0.2,
+            'cluster_ratio_weight': 100_000,
+        },
+        'memory': {
+            'min_metric_value': 16 * 1024,  # 16KB
+            'cv_percentile': 99,
+            'max_cv': 0.05,
+            'min_clusters': 3,
+            'cluster_ratio_bias': 0.2,
+            'cluster_ratio_weight': 16 * 1024,
+        },
+    }
+
     metrics = defaultdict(dict)
     for name, subset in subsets.items():
         metrics['pass@1'][name] = calc_pass_at_1(subset)
         for stat in stats:
             beyond = calc_beyond(subset, dists, stat)
-            dps, dps_norm, _ = calc_dps(subset, dists, stat)
-            dps_filt, dps_norm_filt, num_dps_tasks = calc_dps(subset, dists, stat, filters)
+            dps, dps_norm, _ = calc_dps(subset, dists, stat, **dps_kwargs[stat])
+            dps_filt, dps_norm_filt, num_dps_tasks = calc_dps(subset, dists, stat, filters, **dps_kwargs[stat])
             metrics[f'beyond_{stat}'][name] = beyond
             metrics[f'dps_{stat}'][name] = dps
             metrics[f'dps_norm_{stat}'][name] = dps_norm
