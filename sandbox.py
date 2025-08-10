@@ -331,7 +331,7 @@ class Sandbox(object):
 
             p = Process(target=Sandbox.unsafe_execute, args=(sample, result))
             p.start()
-            p.join(timeout=2 * sample['timeout'] + 1)
+            p.join(timeout=6 * sample['timeout'])
             if p.is_alive():
                 p.kill()
 
