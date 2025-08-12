@@ -27,8 +27,8 @@ def run_solution(instance, solution, run_cnt):
         else:
             return result
 
-    result['status'] = 'passed'
-    return result
+    stats['status'] = 'passed'
+    return stats
 
 
 def get_distributions(run_cnt):
@@ -74,25 +74,19 @@ def get_results(completion_path, transform, run_cnt):
                 result[stat] = np.mean(result[stat])
         results[slug_name] = result
 
+    with open('results.json', 'w') as result_file:
+        result_file.write(json.dumps(results))
+
     with open('final_dists.json', 'r') as dist_file:
         dists = json.load(dist_file)
 
-    easy, medium, hard = dict(), dict(), dict()
+    subsets = {'Easy': set(), 'Medium': set(), 'Hard': set(), 'Total': set()}
     for instance in dataset:
         slug_name = instance['slug_name']
-        if instance['difficulty'] == 'Easy':
-            easy[slug_name] = results[slug_name]
-        elif instance['difficulty'] == 'Medium':
-            medium[slug_name] = results[slug_name]
-        else:
-            hard[slug_name] = results[slug_name]
+        difficulty = instance['difficulty']
 
-    subsets = {
-        'Easy': easy,
-        'Medium': medium,
-        'Hard': hard,
-        'Total': results
-    }
+        subsets['Total'].add(slug_name)
+        subsets[difficulty].add(slug_name)
 
     filters = [filter_by_compute_cost, filter_by_cv, filter_by_clusters]
     dps_kwargs = {
@@ -105,12 +99,12 @@ def get_results(completion_path, transform, run_cnt):
             'cluster_ratio_weight': 0.001,
         },
         'instr': {
-            'min_metric_value': 100_000,
+            'min_metric_value': 1_000_000,
             'cv_percentile': 99,
             'max_cv': 0.05,
             'min_clusters': 3,
             'cluster_ratio_bias': 0.2,
-            'cluster_ratio_weight': 100_000,
+            'cluster_ratio_weight': 1_000_000,
         },
         'memory': {
             'min_metric_value': 16 * 1024,  # 16KB
@@ -123,21 +117,32 @@ def get_results(completion_path, transform, run_cnt):
     }
 
     metrics = defaultdict(dict)
-    for name, subset in subsets.items():
-        metrics['pass@1'][name] = calc_pass_at_1(subset)
+    for name, slug_names in subsets.items():
+        subset_results = {
+            key: val
+            for key, val in results.items()
+            if key in slug_names
+        }
+        subset_dists = {
+            key: val for key, val in dists.items()
+            if key in slug_names
+        }
+
+        metrics['pass@1'][name] = calc_pass_at_1(subset_results)
         for stat in stats:
-            beyond = calc_beyond(subset, dists, stat)
-            dps, dps_norm, _ = calc_dps(subset, dists, stat, **dps_kwargs[stat])
-            dps_filt, dps_norm_filt, num_dps_tasks = calc_dps(subset, dists, stat, filters, **dps_kwargs[stat])
+            beyond = calc_beyond(subset_results, subset_dists, stat)
+            dps, dps_norm, _ = calc_dps(
+                subset_results, subset_dists, stat, **dps_kwargs[stat]
+            )
+            dps_filt, dps_norm_filt, num_dps_tasks = calc_dps(
+                subset_results, subset_dists, stat, filters, **dps_kwargs[stat]
+            )
             metrics[f'beyond_{stat}'][name] = beyond
             metrics[f'dps_{stat}'][name] = dps
             metrics[f'dps_norm_{stat}'][name] = dps_norm
             metrics[f'dps_filt_{stat}'][name] = dps_filt
             metrics[f'dps_norm_filt_{stat}'][name] = dps_norm_filt
             metrics[f'dps_filt_num_tasks_{stat}'][name] = num_dps_tasks
-
-    with open('results.json', 'w') as result_file:
-        result_file.write(json.dumps(results))
 
     with open('metrics.json', 'w') as metric_file:
         metric_file.write(json.dumps(metrics))

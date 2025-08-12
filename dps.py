@@ -54,7 +54,7 @@ def filter_by_clusters(
         slug_name: solutions
         for slug_name, solutions in dists.items()
         if len(get_clusters(
-            solutions[metric_name],
+            sorted(np.mean(solution) for solution in solutions[metric_name])[::-1],
             cluster_ratio_bias,
             cluster_ratio_weight,
         )) >= min_clusters
@@ -115,7 +115,7 @@ def calc_dps(
 
         ratio = 0
         for idx, cluster in enumerate(clusters):
-            reference = mean_metrics[cluster[0]]
+            reference = cluster[0]
             if reference <= result_metric:
                 dps += ratio
                 dps_norm += idx / len(clusters)
