@@ -56,7 +56,7 @@ def get_distributions(run_cnt):
         failed_file.write(json.dumps(failed))
 
 
-def get_results(completion_path, transform, run_cnt):
+def get_results(completion_path, result_path, run_cnt):
     with open('mercury.json', 'r') as dataset_file:
         dataset = json.load(dataset_file)
 
@@ -67,18 +67,25 @@ def get_results(completion_path, transform, run_cnt):
     results = dict()
     for instance in tqdm(dataset):
         slug_name = instance['slug_name']
-        completion = transform(completions[slug_name])
-        result = run_solution(instance, completion, run_cnt)
+        result = run_solution(instance, completions[slug_name], run_cnt)
         if result['status'] == 'passed':
             for stat in stats:
                 result[stat] = np.mean(result[stat])
         results[slug_name] = result
 
-    with open('results.json', 'w') as result_file:
+    with open(result_path, 'w') as result_file:
         result_file.write(json.dumps(results))
+
+
+def get_metrics(result_path, metric_path):
+    with open('mercury.json', 'r') as dataset_file:
+        dataset = json.load(dataset_file)
 
     with open('final_dists.json', 'r') as dist_file:
         dists = json.load(dist_file)
+
+    with open(result_path, 'r') as result_file:
+        results = json.load(result_file)
 
     subsets = {'Easy': set(), 'Medium': set(), 'Hard': set(), 'Total': set()}
     for instance in dataset:
@@ -90,32 +97,33 @@ def get_results(completion_path, transform, run_cnt):
 
     filters = [filter_by_compute_cost, filter_by_cv, filter_by_clusters]
     dps_kwargs = {
-        'time': {
-            'min_metric_value': 0.001,  # 1ms
-            'cv_percentile': 99,
-            'max_cv': 0.05,
-            'min_clusters': 3,
-            'cluster_ratio_bias': 0.2,
-            'cluster_ratio_weight': 0.001,
-        },
         'instr': {
             'min_metric_value': 1_000_000,
-            'cv_percentile': 99,
+            'cv_percentile': 95,
             'max_cv': 0.05,
             'min_clusters': 3,
-            'cluster_ratio_bias': 0.2,
-            'cluster_ratio_weight': 1_000_000,
+            'cluster_ratio_bias': 0.1,
+            'cluster_ratio_weight': 0.01 * 1_000_000,
+        },
+        'time': {
+            'min_metric_value': 0.001,  # 1ms
+            'cv_percentile': 90,
+            'max_cv': 0.1,
+            'min_clusters': 3,
+            'cluster_ratio_bias': 0.1,
+            'cluster_ratio_weight': 0.01 * 0.001,
         },
         'memory': {
-            'min_metric_value': 16 * 1024,  # 16KB
-            'cv_percentile': 99,
+            'min_metric_value': 256,  # 0.25KB
+            'cv_percentile': 95,
             'max_cv': 0.05,
             'min_clusters': 3,
-            'cluster_ratio_bias': 0.2,
-            'cluster_ratio_weight': 16 * 1024,
+            'cluster_ratio_bias': 0.1,
+            'cluster_ratio_weight': 0.01 * 256,
         },
     }
 
+    stats = ['instr', 'time', 'memory']
     metrics = defaultdict(dict)
     for name, slug_names in subsets.items():
         subset_results = {
@@ -144,7 +152,7 @@ def get_results(completion_path, transform, run_cnt):
             metrics[f'dps_norm_filt_{stat}'][name] = dps_norm_filt
             metrics[f'dps_filt_num_tasks_{stat}'][name] = num_dps_tasks
 
-    with open('metrics.json', 'w') as metric_file:
+    with open(metric_path, 'w') as metric_file:
         metric_file.write(json.dumps(metrics))
 
 
@@ -167,9 +175,12 @@ def calc_beyond(results, dists, metric_name):
 
         min_metric = metrics[0]
         max_metric = metrics[-1]
-        result_metric = min(max_metric, max(min_metric, result[metric_name]))
 
-        beyond += (max_metric - result_metric) / (max_metric - min_metric)
+        if min_metric != max_metric:
+            result_metric = min(max_metric, max(min_metric, result[metric_name]))
+            beyond += (max_metric - result_metric) / (max_metric - min_metric)
+        else:
+            beyond += 1
 
     return beyond / len(results)
 
@@ -195,6 +206,3 @@ def get_main_method(completion):
         idx += 1
 
     return '\n'.join(lines[:idx]).strip()
-
-
-get_results('phi_2_completions.json', split_by_newlines, 3)
