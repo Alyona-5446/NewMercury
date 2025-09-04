@@ -1,22 +1,24 @@
 # coding: utf-8
 
+import contextlib
+import faulthandler
 import io
-import os
 import json
-import lctk
-import time
+import os
+import platform
 import re
 import signal
 import sys
 import tempfile
-import platform
-import contextlib
-import faulthandler
-from tqdm import tqdm
+import time
+from collections import Counter, defaultdict
 from copy import deepcopy
-from collections import defaultdict, Counter
 from multiprocessing import Manager, Process
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+
+import lctk
+from datasets import load_dataset
+from tqdm import tqdm
 
 
 # Timeout Exception
@@ -294,9 +296,7 @@ class Sandbox(object):
 
     @staticmethod
     def generate_tests(test_cnt, sol_cnt):
-        with open('mercury.json', 'r') as file:
-            dataset = json.load(file)
-
+        dataset = load_dataset('Mathematician/NewMercury', split='test')
         tests = dict()
         for instance in tqdm(dataset):
             ex = len(re.findall(r'Example\s+\d:', instance['pretty_content'][0]))

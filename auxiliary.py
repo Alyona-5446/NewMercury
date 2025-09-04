@@ -1,5 +1,6 @@
-import json
 import re
+
+from datasets import load_dataset
 
 
 def get(dataset, slug_name):
@@ -34,5 +35,4 @@ def extract_code(dataset, outputs):
     return codes
 
 
-with open('mercury.json', 'r') as file:
-    mercury = json.load(file)
+dataset = load_dataset('Mathematician/NewMercury', split='test')

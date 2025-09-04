@@ -1,7 +1,8 @@
 import json
-
 from collections import defaultdict
+
 import numpy as np
+from datasets import load_dataset
 from tqdm import tqdm
 
 from dps import calc_dps, filter_by_compute_cost, filter_by_cv, filter_by_clusters
@@ -32,9 +33,7 @@ def run_solution(instance, solution, run_cnt):
 
 
 def get_distributions(run_cnt):
-    with open('mercury.json', 'r') as dataset_file:
-        dataset = json.load(dataset_file)
-
+    dataset = load_dataset('Mathematician/NewMercury', split='test')
     dists = dict()
     failed = defaultdict(list)
     for instance in tqdm(dataset):
@@ -57,12 +56,10 @@ def get_distributions(run_cnt):
 
 
 def get_results(completion_path, result_path, run_cnt):
-    with open('mercury.json', 'r') as dataset_file:
-        dataset = json.load(dataset_file)
-
     with open(completion_path, 'r') as completion_file:
         completions = json.load(completion_file)
 
+    dataset = load_dataset('Mathematician/NewMercury', split='test')
     stats = ['instr', 'time', 'memory']
     results = dict()
     for instance in tqdm(dataset):
@@ -78,15 +75,13 @@ def get_results(completion_path, result_path, run_cnt):
 
 
 def get_metrics(result_path, metric_path):
-    with open('mercury.json', 'r') as dataset_file:
-        dataset = json.load(dataset_file)
-
     with open('final_dists.json', 'r') as dist_file:
         dists = json.load(dist_file)
 
     with open(result_path, 'r') as result_file:
         results = json.load(result_file)
 
+    dataset = load_dataset('Mathematician/NewMercury', split='test')
     subsets = {'Easy': set(), 'Medium': set(), 'Hard': set(), 'Total': set()}
     for instance in dataset:
         slug_name = instance['slug_name']
